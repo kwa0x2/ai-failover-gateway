@@ -1,0 +1,22 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/gateway ./cmd/gateway"
+  entrypoint = "./tmp/gateway"
+  # Watch Go sources only; .air.toml or README changes should not restart the
+  # server.
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "deploy", "docs", ".git"]
+  # Test files do not affect the running binary — rebuilding on them just
+  # resets in-memory state (breaker, mock scripts) for nothing.
+  exclude_regex = ["_test\\.go"]
+  # Editors write files in bursts; wait for the dust to settle before building.
+  delay = 300
+  stop_on_error = true
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
