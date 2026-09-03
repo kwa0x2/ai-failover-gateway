@@ -6,13 +6,8 @@ import (
 )
 
 // Provider is an outbound port: one AI backend.
-//
-// Implementations translate their vendor's protocol and classify its errors.
-// Retry, backoff, circuit breaking and failover are policy and belong to the
-// router, so they stay consistent across vendors.
 type Provider interface {
 	Name() string
-	// Complete performs exactly one attempt and must not retry internally.
 	Complete(ctx context.Context, req Request) (*Response, error)
 }
 
@@ -26,8 +21,7 @@ const (
 	BreakerOpen
 )
 
-// Recorder is an outbound port for telemetry. Core reports what happened; how
-// it is stored is an adapter's concern.
+// Recorder is an outbound port for telemetry.
 type Recorder interface {
 	ProviderAttempt(provider, outcome string)
 	ProviderLatency(provider string, d time.Duration)

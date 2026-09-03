@@ -13,26 +13,18 @@ import (
 
 // BreakerConfig tunes one provider's circuit breaker.
 type BreakerConfig struct {
-	// MinRequests is the sample size required before the failure ratio applies.
-	MinRequests uint32
-	// FailureRatio opens the circuit once exceeded, e.g. 0.5 for 50%.
-	FailureRatio float64
-	// OpenTimeout is how long the circuit stays open before probing.
-	OpenTimeout time.Duration
-	// HalfOpenMaxCalls is how many probes may run while half-open.
+	MinRequests      uint32
+	FailureRatio     float64
+	OpenTimeout      time.Duration
 	HalfOpenMaxCalls uint32
-	// Interval resets the closed-state counters periodically. Zero disables it.
-	Interval time.Duration
+	Interval         time.Duration
 }
 
 // RouteConfig tunes how one provider is called.
 type RouteConfig struct {
-	// MaxAttempts is the total number of tries, not the number of retries.
 	MaxAttempts    int
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
-	// AttemptTimeout bounds a single provider call, so a slow provider cannot
-	// consume the whole request budget and leave nothing for the fallback.
 	AttemptTimeout time.Duration
 	Breaker        BreakerConfig
 }
@@ -80,9 +72,6 @@ func newRoute(p Provider, cfg RouteConfig, log *slog.Logger, rec Recorder) *rout
 			return float64(c.TotalFailures)/float64(c.Requests) >= bc.FailureRatio
 		},
 
-		// A non-retryable error is the caller's fault, not the provider's, so
-		// it counts as success here. Otherwise a burst of malformed requests
-		// would take a healthy provider offline.
 		IsSuccessful: func(err error) bool {
 			return err == nil || !IsRetryable(err)
 		},
@@ -116,14 +105,14 @@ func toBreakerState(s gobreaker.State) BreakerState {
 	}
 }
 
-// Router tries its routes in order until one succeeds. routes[0] is primary.
+// Router tries its routes in order until one succeeds.
 type Router struct {
 	routes []*route
 	log    *slog.Logger
 	rec    Recorder
 }
 
-// New builds a router. Providers are tried in the order given.
+// New builds a router.
 func New(log *slog.Logger, rec Recorder, cfg RouteConfig, providers ...Provider) *Router {
 	if rec == nil {
 		rec = NopRecorder{}
@@ -156,8 +145,6 @@ func (r *Router) Complete(ctx context.Context, req Request) (*Result, error) {
 			return &Result{Response: resp, Provider: rt.p.Name(), Failovers: i}, nil
 		}
 
-		// The caller already gave up; failing over would burn the next
-		// provider's quota on an answer nobody will read.
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("request cancelled during %s: %w", rt.p.Name(), ctx.Err())
 		}
@@ -170,7 +157,6 @@ func (r *Router) Complete(ctx context.Context, req Request) (*Result, error) {
 			continue
 		}
 
-		// A permanent error reproduces identically on every provider.
 		if !IsRetryable(err) {
 			r.log.Info("permanent provider error, not failing over",
 				slog.String("provider", rt.p.Name()),
@@ -188,8 +174,7 @@ func (r *Router) Complete(ctx context.Context, req Request) (*Result, error) {
 }
 
 // call wraps the retry loop in the breaker, so every attempt for one request
-// collapses into a single breaker outcome. Nesting them the other way would let
-// MaxAttempts silently control how fast the circuit trips.
+// collapses into a single breaker outcome.
 func (rt *route) call(ctx context.Context, req Request) (*Response, error) {
 	return rt.breaker.Execute(func() (*Response, error) {
 		return rt.withRetry(ctx, req)

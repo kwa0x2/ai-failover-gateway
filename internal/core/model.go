@@ -1,6 +1,5 @@
 // Package core holds the domain: the vendor-neutral model, the ports it talks
-// through, and the failover routing policy. It imports no other internal
-// package — adapters depend inward on core, never the reverse.
+// through, and the failover routing policy.
 package core
 
 // Message is a single turn in a conversation.
@@ -21,6 +20,7 @@ type Response struct {
 	Text         string `json:"text"`
 	Model        string `json:"model"`
 	Provider     string `json:"provider"`
+	StopReason   string `json:"stop_reason"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
 }

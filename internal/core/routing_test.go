@@ -159,7 +159,6 @@ func TestBreaker_OpensAndStopsCallingProvider(t *testing.T) {
 	cfg := fastConfig()
 	r := core.New(discardLogger(), nil, cfg, primary, secondary)
 
-	// Drive enough logical failures to satisfy MinRequests and trip the circuit.
 	for range int(cfg.Breaker.MinRequests) {
 		res, err := r.Complete(context.Background(), aRequest())
 		require.NoError(t, err)
@@ -190,7 +189,6 @@ func TestBreaker_HalfOpenRecovers(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// The provider heals and the open window expires.
 	primary.SetScript(mock.Behaviour{Text: "healthy again"})
 	time.Sleep(cfg.Breaker.OpenTimeout + 20*time.Millisecond)
 
@@ -216,7 +214,6 @@ func TestBreaker_PermanentErrorsDoNotTrip(t *testing.T) {
 		require.False(t, core.IsRetryable(err))
 	}
 
-	// Still being called on every request => the circuit never opened.
 	assert.Equal(t, requests, primary.Calls(),
 		"client errors say nothing about provider health and must not trip the breaker")
 }

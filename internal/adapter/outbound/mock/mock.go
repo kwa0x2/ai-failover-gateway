@@ -66,8 +66,6 @@ func (p *Provider) Complete(ctx context.Context, req core.Request) (*core.Respon
 	p.mu.Unlock()
 
 	if b.Delay > 0 {
-		// Race the delay against the context so a cancelled caller is not made
-		// to wait it out.
 		select {
 		case <-time.After(b.Delay):
 		case <-ctx.Done():
@@ -91,6 +89,7 @@ func (p *Provider) Complete(ctx context.Context, req core.Request) (*core.Respon
 		Text:         text,
 		Model:        "mock-model",
 		Provider:     p.name,
+		StopReason:   "end_turn",
 		InputTokens:  len(req.Messages),
 		OutputTokens: len(text),
 	}, nil

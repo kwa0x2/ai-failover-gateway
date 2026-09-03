@@ -1,5 +1,4 @@
-// Package rest is the inbound HTTP adapter. It translates HTTP into domain
-// calls and domain errors back into HTTP semantics.
+// Package rest is the inbound HTTP adapter.
 package rest
 
 import (
@@ -8,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,15 +22,34 @@ type Completer interface {
 	Complete(ctx context.Context, req core.Request) (*core.Result, error)
 }
 
+// RequestRecorder is the HTTP-level telemetry this adapter needs.
+type RequestRecorder interface {
+	Request(route, method, status string, d time.Duration)
+}
+
+type nopRequestRecorder struct{}
+
+func (nopRequestRecorder) Request(string, string, string, time.Duration) {}
+
 type Server struct {
 	router  Completer
 	log     *slog.Logger
 	timeout time.Duration
+	rec     RequestRecorder
 	extra   map[string]http.Handler
 }
 
-func NewServer(router Completer, log *slog.Logger, timeout time.Duration) *Server {
-	return &Server{router: router, log: log, timeout: timeout, extra: map[string]http.Handler{}}
+func NewServer(router Completer, log *slog.Logger, timeout time.Duration, rec RequestRecorder) *Server {
+	if rec == nil {
+		rec = nopRequestRecorder{}
+	}
+	return &Server{
+		router:  router,
+		log:     log,
+		timeout: timeout,
+		rec:     rec,
+		extra:   map[string]http.Handler{},
+	}
 }
 
 // Mount registers an extra GET handler, e.g. the Prometheus endpoint, without
@@ -42,8 +61,6 @@ func (s *Server) Handler() http.Handler {
 	e := gin.New()
 	e.Use(gin.Recovery(), s.requestID(), s.accessLog())
 
-	// Liveness and readiness are separate: Kubernetes restarts a pod that fails
-	// liveness, but only removes it from the load balancer on readiness.
 	e.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	e.GET("/readyz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ready"}) })
 
@@ -94,12 +111,20 @@ func (s *Server) accessLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
+		elapsed := time.Since(start)
+
+		route := c.FullPath()
+
 		s.log.Info("request",
 			slog.String("request_id", c.GetString(requestIDKey)),
 			slog.String("method", c.Request.Method),
-			slog.String("path", c.FullPath()),
+			slog.String("path", route),
 			slog.Int("status", c.Writer.Status()),
-			slog.Duration("duration", time.Since(start)))
+			slog.Duration("duration", elapsed))
+
+		if route != "" {
+			s.rec.Request(route, c.Request.Method, strconv.Itoa(c.Writer.Status()), elapsed)
+		}
 	}
 }
 
@@ -113,8 +138,6 @@ func (s *Server) handleChat(c *gin.Context) {
 		return
 	}
 
-	// The request budget is set at the edge; retries and failover all live
-	// inside it.
 	ctx, cancel := context.WithTimeout(c.Request.Context(), s.timeout)
 	defer cancel()
 
@@ -136,12 +159,12 @@ func (s *Server) handleChat(c *gin.Context) {
 		Model:        res.Response.Model,
 		Failovers:    res.Failovers,
 		InputTokens:  res.Response.InputTokens,
+		StopReason:   res.Response.StopReason,
 		OutputTokens: res.Response.OutputTokens,
 	})
 }
 
-// classify maps domain errors onto HTTP status codes. This is the only place
-// that knows about status codes, which is what keeps core transport-agnostic.
+// classify maps domain errors onto HTTP status codes.
 func classify(err error) (int, string) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -152,7 +175,6 @@ func classify(err error) (int, string) {
 		return http.StatusServiceUnavailable, "no_healthy_provider"
 	}
 
-	// Pass a provider's 4xx through so the client can fix its request.
 	var pErr *core.Error
 	if errors.As(err, &pErr) && !pErr.Retryable {
 		if pErr.StatusCode >= 400 && pErr.StatusCode <= 499 {

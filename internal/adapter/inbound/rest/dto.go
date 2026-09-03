@@ -3,7 +3,8 @@ package rest
 import "github.com/kwa0x2/ai-failover-gateway/internal/core"
 
 // chatRequest is the public wire format, kept separate from core.Request so
-// validation rules and JSON field names can change without touching the domain.
+// validation rules and JSON field names can change without touching the
+// domain.
 type chatRequest struct {
 	Messages []struct {
 		Role    string `json:"role" binding:"required,oneof=user assistant"`
@@ -28,6 +29,7 @@ type chatResponse struct {
 	Text         string `json:"text"`
 	Provider     string `json:"provider"`
 	Model        string `json:"model"`
+	StopReason   string `json:"stop_reason"`
 	Failovers    int    `json:"failovers"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`

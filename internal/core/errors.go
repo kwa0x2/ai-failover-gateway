@@ -5,15 +5,12 @@ import (
 	"fmt"
 )
 
-// Error is a provider failure classified for the router. Adapters translate
-// their SDK errors into this shape.
+// Error is a provider failure classified for the router.
 type Error struct {
 	Provider   string
 	StatusCode int
-	// Retryable drives three separate decisions: whether to retry, whether the
-	// circuit breaker counts it as a failure, and whether to fail over.
-	Retryable bool
-	Err       error
+	Retryable  bool
+	Err        error
 }
 
 func (e *Error) Error() string {
@@ -23,9 +20,7 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// IsRetryable reports whether err is classified retryable. Unclassified errors
-// default to retryable: an unknown transport failure is more likely transient
-// than permanent.
+// IsRetryable reports whether err is classified retryable.
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false
